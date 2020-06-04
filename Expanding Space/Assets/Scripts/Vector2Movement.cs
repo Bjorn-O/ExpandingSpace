@@ -4,50 +4,110 @@ using UnityEngine;
 
 public class Vector2Movement : MonoBehaviour
 {
-    private Rigidbody2D rigidBody;
+    
+    Rigidbody2D rigidBody;
+    CapsuleCollider2D capColl;
+    public Animator animator;
 
-    private Vector2 _moveDirection;
+    Vector2 _moveDirection;
 
-    private float speed = 10.0f;
-    private float jumpForce = 20.0f;
-    private float strafeSpeed = 5.0f;
-    private float crouchSpeed = 6.0f;
-    private int jumpCount;
-    public int jumpCountValue;
+    public float speed;
+    public float strafeSpeed;
+    public float crouchSpeed;
 
-    private bool _grounded;
+    bool _isJumping;
+    int _jumpCount;
+    float _jumpTimeCounter;
+    float _jumpForce;
+    public float jumpTime;
+    public float jumpForce = 20.0f;
+    public int jumpCountValue = 1;
 
+    bool _grounded;
+    bool _platformGrounded;
+    bool _isStanding;
+    public Transform groundCheck;
+    public float groundCheckRadius;
+    public LayerMask thisIsGround;
+    public LayerMask thisIsPlatform;
+    
     void Awake()
     {
-        jumpCount = jumpCountValue;
+        _jumpCount = jumpCountValue;
         rigidBody = GetComponent<Rigidbody2D>();
+        capColl = gameObject.GetComponent<CapsuleCollider2D>();
     }
 
     // Update is called once per frame
     void FixedUpdate()
     {
-        Walking();
-        
+        Movement();
         rigidBody.velocity = new Vector2(_moveDirection.x, rigidBody.velocity.y);
     }
 
     void Update()
-    {
+    { 
+        FootingCheck();
         Jumping();
-        if (_grounded)
+    }
+    void FootingCheck()
+    {
+        // At the feet of the player it'll create an invisible circle equal to the groundCheckRadius that checks if the layer for thisIsGround is present. If so, it'll return true.
+        _grounded = Physics2D.OverlapCircle(groundCheck.position, groundCheckRadius, thisIsGround);
+        //Seperated to help with scripting that allows the player to drop through a platform.
+        _platformGrounded = Physics2D.OverlapCircle(groundCheck.position, groundCheckRadius, thisIsPlatform);
+
+        //Checks if the player is standing, may it be on a fall-through platform or the ground.
+        if (_grounded || _platformGrounded)
         {
-            jumpCount = jumpCountValue;
+            _isStanding = true; 
+        } else
+        {
+            _isStanding = false;
         }
+
+        //Resets the amount of mid-air-jumps the player has upon landing
+        if (_isStanding)
+        {
+            _jumpCount = jumpCountValue;
+            _jumpForce = jumpForce;
+        }
+
+        if (Input.GetButton("Down"))
+        {
+            Debug.Log("GET DOWN BABY!");
+        }
+
+        if (Input.GetButton("Down") && Input.GetButtonDown("Jump") && _platformGrounded)
+        {
+            capColl.isTrigger = true;
+            Debug.Log("Dropping");
+        }
+
+        animator.SetBool("Grounded", _isStanding);
     }
 
-    void Walking()
+    void Movement()
     {
         //Creates a new variable which will be used in the calculation
         float currentSpeed;
+        
         //Sets the X value in move Direction to -1 and 1, or inbetween with dynamic inputs like a Joystick.
         _moveDirection.x = Input.GetAxisRaw("Horizontal");
+        animator.SetFloat("Speed", Mathf.Abs(_moveDirection.x));
+
+        //Turns around the character based on X-Input.
+        if (_moveDirection.x > 0)
+        {
+            transform.eulerAngles = new Vector3(0, 0, 0);
+        } else if (_moveDirection.x < 0)
+        {
+            transform.eulerAngles = new Vector3(0, 180, 0);
+        }
+
+
         //Does a quick check to see if the player is currently crouched or aiborn. Will be replaced later to ensure players stay crouched under obstacles.
-        if (Input.GetButton("Down") && _grounded){
+        if (Input.GetButton("Crouch") && _grounded){
             currentSpeed = crouchSpeed;
         }
         else if (!_grounded)
@@ -64,24 +124,40 @@ public class Vector2Movement : MonoBehaviour
 
     void Jumping()
     {
-        if (Input.GetButtonDown("Jump") && _grounded)
+
+        if (Input.GetButtonDown("Jump") && _isStanding && !Input.GetButton("Down") || Input.GetButtonDown("Jump") && !_isStanding && _jumpCount > 0 && !Input.GetButton("Down"))
         {
-            rigidBody.velocity = Vector2.up * jumpForce;
+            --_jumpCount;
+            _isJumping = true;
+            _jumpTimeCounter = jumpTime;
+            rigidBody.velocity = Vector2.up * _jumpForce;
+
+            animator.SetBool("Jump", true);
         }
-        else if (Input.GetButtonDown("Jump") && !_grounded && jumpCount != 0)
+        if (Input.GetButton("Jump") && _isJumping)
         {
-            rigidBody.velocity = Vector2.up * jumpForce;
-            --jumpCount; 
+            if (_jumpTimeCounter > 0)
+            {
+                rigidBody.velocity = Vector2.up * _jumpForce;
+                _jumpTimeCounter -= Time.deltaTime;
+            }
+            else
+            {
+                _jumpForce /= 2;
+                _isJumping = false;
+                animator.SetBool("Jump", false);
+            }
+        }
+        if (Input.GetButtonUp("Jump"))
+        {
+            _jumpForce /= 2;
+            _isJumping = false;
+            animator.SetBool("Jump", false);
         }
     }
 
-    void OnCollisionStay2D(Collision2D collision)
+    private void OnTriggerExit2D(Collider2D collision)
     {
-        _grounded = true;
-    }
-
-    private void OnCollisionExit2D(Collision2D collision)
-    {
-        _grounded = false;  
+        capColl.isTrigger = false;
     }
 }
